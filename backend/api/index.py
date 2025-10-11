@@ -1,10 +1,11 @@
 import logging
-from typing import Dict, Union
+from typing import Dict
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import CORS_ORIGINS, ENV
+from api.services.transcription import transcribe_audio
 
 # Setup logging for Vercel
 logging.basicConfig(
@@ -54,28 +55,29 @@ def test_endpoint() -> Dict[str, str]:
         "timestamp": "2025-01-01T00:00:00Z"
     }
 
-@app.post("/api/upload")
-async def upload_audio(audio: UploadFile = File(...)) -> Dict[str, Union[str, int, None]]:
-    """Accepts audio file uploads and reports metadata."""
+@app.post("/api/transcribe")
+async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, str]:
+    """Accept audio uploads and return Gemini transcription variants."""
     try:
-        logger.info(
-            f"upload_started: filename={audio.filename}, content_type={audio.content_type}"
-        )
+        logger.info("transcribe_started: filename=%s", audio.filename)
 
         contents = await audio.read()
         file_size = len(contents)
+        logger.info("audio_received: size=%s bytes", file_size)
 
-        logger.info(f"upload_finished: size={file_size} bytes")
+        result = await transcribe_audio(contents, audio.filename, audio.content_type)
 
-        return {
-            "status": "received",
-            "filename": audio.filename,
-            "size": file_size,
-            "content_type": audio.content_type,
-        }
+        logger.info("transcribe_finished")
+        return result
     except Exception as exc:  # pragma: no cover - defensive logging
-        logger.error("upload_failed: %s", str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("transcribe_failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": str(exc),
+                "suggestion": "Check Vercel logs with: vercel logs",
+            },
+        ) from exc
 
 
 # Error handler for debugging
