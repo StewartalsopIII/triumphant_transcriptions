@@ -2,6 +2,7 @@ import logging
 from typing import Dict
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.config import CORS_ORIGINS, ENV
@@ -55,6 +56,13 @@ def test_endpoint() -> Dict[str, str]:
         "timestamp": "2025-01-01T00:00:00Z"
     }
 
+
+class TransformRequest(BaseModel):
+    text: str
+    type: str  # "tweet" | "professional" | "custom"
+    customPrompt: str | None = None
+
+
 @app.post("/api/transcribe")
 async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, str]:
     """Accept audio uploads and return Gemini transcription variants."""
@@ -78,6 +86,48 @@ async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, 
                 "suggestion": "Check Vercel logs with: vercel logs",
             },
         ) from exc
+
+@app.post("/api/transform")
+async def transform_text(request: TransformRequest):
+    try:
+        logger.info("transform_started: type=%s", request.type)
+
+        import google.generativeai as genai
+        from api.config import GEMINI_MODEL_NAME
+
+        if request.type == "tweet":
+            prompt = f"""Condense this to ~280 characters, make it punchy and engaging for Twitter/X. Keep the core insight but make it shareable:
+
+{request.text}
+
+Only return the tweet text, nothing else."""
+        elif request.type == "professional":
+            prompt = f"""Rewrite this in a formal, professional tone suitable for business communication. Remove casual language and structure it clearly:
+
+{request.text}
+
+Only return the professional version, nothing else."""
+        elif request.type == "custom":
+            if not request.customPrompt:
+                raise HTTPException(status_code=400, detail="customPrompt required for custom type")
+            prompt = f"""{request.customPrompt}:
+
+{request.text}"""
+        else:
+            raise HTTPException(status_code=400, detail="Invalid type. Use: tweet, professional, or custom")
+
+        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+        response = model.generate_content(prompt)
+        result_text = (response.text or "").strip()
+
+        logger.info("transform_finished")
+        return {"text": result_text}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("transform_failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 
 # Error handler for debugging

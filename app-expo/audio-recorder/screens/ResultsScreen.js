@@ -46,20 +46,35 @@ export default function ResultsScreen({ navigation }) {
         <Text style={styles.title}>Transcription Results</Text>
         {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
 
-        {ENTRIES.map(({ key, label }) => (
-          <View key={key} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>{label}</Text>
+        {ENTRIES.map(({ key, label }) => {
+          const transcriptValue = transcriptions?.[key] ?? '';
+          return (
+            <View key={key} style={styles.card}>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{label}</Text>
+                <TouchableOpacity
+                  style={styles.copyButton}
+                  onPress={() => copyToClipboard(transcriptValue)}
+                  disabled={!transcriptValue}
+                >
+                  <Text style={styles.copyButtonText}>Copy</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.cardBody}>{transcriptValue || '-'}</Text>
               <TouchableOpacity
-                style={styles.copyButton}
-                onPress={() => copyToClipboard(transcriptions?.[key] ?? '')}
+                style={[
+                  styles.button,
+                  styles.primaryButton,
+                  !transcriptValue ? styles.disabledButton : null,
+                ]}
+                onPress={() => navigation.navigate('Transform', { text: transcriptValue })}
+                disabled={!transcriptValue}
               >
-                <Text style={styles.copyButtonText}>Copy</Text>
+                <Text style={styles.buttonText}>Transform</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.cardBody}>{transcriptions?.[key] ?? '-'}</Text>
-          </View>
-        ))}
+          );
+        })}
 
         <TouchableOpacity
           style={[styles.button, styles.primaryButton]}
@@ -133,6 +148,9 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     backgroundColor: '#2563eb',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   buttonText: {
     color: '#f8fafc',

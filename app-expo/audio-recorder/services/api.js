@@ -39,4 +39,25 @@ export const api = {
 
     return await response.json();
   },
+
+  async transform(text, type, customPrompt = null) {
+    if (!API_URL) {
+      throw new Error('API URL is not configured.');
+    }
+
+    const response = await fetch(`${API_URL}/api/transform`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, type, customPrompt }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Transform failed: ${error}`);
+    }
+
+    return await response.json();
+  },
 };

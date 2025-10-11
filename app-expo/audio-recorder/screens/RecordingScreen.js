@@ -27,11 +27,12 @@ export default function RecordingScreen({ navigation }) {
   const [error, setError] = useState('');
   const timerRef = useRef(null);
   const recordingRef = useRef(null);
-  const { setTranscriptions } = useTranscription();
+  const { setTranscriptions, resetTransforms } = useTranscription();
 
   useFocusEffect(
     useCallback(() => {
       setTranscriptions(null);
+      resetTransforms();
       setError('');
       setElapsedTime(0);
 
@@ -41,7 +42,7 @@ export default function RecordingScreen({ navigation }) {
           timerRef.current = null;
         }
       };
-    }, [setTranscriptions])
+    }, [setTranscriptions, resetTransforms])
   );
 
   const startRecording = async () => {

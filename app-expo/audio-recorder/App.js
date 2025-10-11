@@ -8,6 +8,7 @@ import { TranscriptionProvider } from './TranscriptionContext';
 import RecordingScreen from './screens/RecordingScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
 import ResultsScreen from './screens/ResultsScreen';
+import TransformScreen from './screens/TransformScreen';
 
 const Stack = createStackNavigator();
 
@@ -26,6 +27,7 @@ export default function App() {
           <Stack.Screen name="Recording" component={RecordingScreen} />
           <Stack.Screen name="Processing" component={ProcessingScreen} />
           <Stack.Screen name="Results" component={ResultsScreen} />
+          <Stack.Screen name="Transform" component={TransformScreen} />
         </Stack.Navigator>
       </NavigationContainer>
     </TranscriptionProvider>
