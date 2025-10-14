@@ -16,9 +16,7 @@ PROMPT = """
 Transcribe this audio and return JSON in this EXACT format (no other text):
 {
   "originalStrict": "word-for-word transcription in the original language spoken",
-  "originalLight": "same language as original, remove um/uh/like filler words, fix grammar, keep exact vocabulary",
-  "englishStrict": "word-for-word English translation",
-  "englishLight": "natural English translation, remove filler words, clean grammar"
+  "englishStrict": "word-for-word English translation"
 }
 
 VARIANT SPECIFICATIONS:
@@ -28,29 +26,52 @@ originalStrict - Verbatim capture:
 • Keep false starts, repetitions, incomplete thoughts
 • Original language only
 
-originalLight - Message-ready in original language:
-• Transform spoken → written: remove ALL fillers and verbal tics
-• Fix grammar: complete sentences, proper tense, clear structure  
-• Remove repetitions and false starts
-• PRESERVE exact vocabulary - do not paraphrase or use synonyms
-• Goal: reads like a polished written message, ready to send as-is
-• Must sound written, not transcribed speech
-
 englishStrict - Verbatim English:
 • Direct word-for-word translation including all fillers
 • Maintain spoken structure even if awkward
 
-englishLight - Message-ready English:
-• Natural, fluent English prose
-• Proper grammar and sentence structure
-• Remove all spoken artifacts (fillers, false starts, repetitions)
-• Goal: reads like it was originally composed in written English
-• Ready to send as a professional message
-
-REMEMBER: "Light" = transform spoken language into clean written language that's ready to send.
-
 Only return valid JSON, nothing else.
 """
+
+
+async def apply_light_edit(text: str, max_move_ratio: float = 0.3) -> str:
+    """
+    Apply light editing with sentence reordering:
+    - Remove filler words (um, uh, like, etc.)
+    - Fix grammar and punctuation
+    - Reorder up to 30% of sentences for better flow
+    - Preserve exact vocabulary
+    """
+    prompt = (
+        "You will receive a passage of text.\n"
+        f"You may reorder up to {int(max_move_ratio * 100)}% of the sentences to improve clarity "
+        "and you may correct punctuation or obvious grammar mistakes.\n"
+        "You must NOT rephrase the wording of any sentence beyond those fixes.\n"
+        "Also remove filler words (um, uh, like, you know, basically, actually), "
+        "fix grammar to create complete sentences, and remove repetitions.\n"
+        "PRESERVE the exact vocabulary - do not paraphrase or use synonyms.\n"
+        "Return ONLY the updated passage as plain text. Do not add explanations or formatting.\n\n"
+        "Text:\n" + text
+    )
+
+    try:
+        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+        response = model.generate_content(prompt)
+        result_text = (response.text or "").strip()
+
+        if result_text.startswith("```"):
+            segments = result_text.split("```")
+            if len(segments) >= 2:
+                result_text = segments[1]
+                if result_text.startswith("json") or result_text.startswith("text"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+
+        return result_text
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error("light_edit_failed: %s", exc, exc_info=True)
+        # Return original text if editing fails
+        return text
 
 
 async def transcribe_audio(
@@ -71,6 +92,7 @@ async def transcribe_audio(
             file_size,
         )
 
+        # Step 1: Get strict variants from Gemini
         model = genai.GenerativeModel(GEMINI_MODEL_NAME)
         response = model.generate_content(
             [
@@ -86,6 +108,7 @@ async def transcribe_audio(
 
         result_text = (response.text or "").strip()
 
+        # Strip code blocks if present
         if result_text.startswith("```"):
             segments = result_text.split("```")
             if len(segments) >= 2:
@@ -94,9 +117,25 @@ async def transcribe_audio(
                     result_text = result_text[4:]
             result_text = result_text.strip()
 
-        result = json.loads(result_text)
+        strict_variants = json.loads(result_text)
+        logger.info("strict_transcription_successful")
+
+        # Step 2: Apply light editing to create light variants
+        logger.info("applying_light_edits")
+        original_light = await apply_light_edit(strict_variants["originalStrict"])
+        english_light = await apply_light_edit(strict_variants["englishStrict"])
+
+        # Step 3: Return all 4 variants
+        result = {
+            "originalStrict": strict_variants["originalStrict"],
+            "originalLight": original_light,
+            "englishStrict": strict_variants["englishStrict"],
+            "englishLight": english_light,
+        }
+
         logger.info("transcription_successful")
         return result
+
     except json.JSONDecodeError as exc:
         logger.error("json_parse_failed: %s", exc, exc_info=True)
         raise ValueError(f"Failed to parse Gemini response as JSON: {exc}") from exc
