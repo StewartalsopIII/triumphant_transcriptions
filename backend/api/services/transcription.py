@@ -21,6 +21,34 @@ Transcribe this audio and return JSON in this EXACT format (no other text):
   "englishLight": "natural English translation, remove filler words, clean grammar"
 }
 
+VARIANT SPECIFICATIONS:
+
+originalStrict - Verbatim capture:
+• Include every word, pause, filler (um, uh, like, you know, basically, actually)
+• Keep false starts, repetitions, incomplete thoughts
+• Original language only
+
+originalLight - Message-ready in original language:
+• Transform spoken → written: remove ALL fillers and verbal tics
+• Fix grammar: complete sentences, proper tense, clear structure  
+• Remove repetitions and false starts
+• PRESERVE exact vocabulary - do not paraphrase or use synonyms
+• Goal: reads like a polished written message, ready to send as-is
+• Must sound written, not transcribed speech
+
+englishStrict - Verbatim English:
+• Direct word-for-word translation including all fillers
+• Maintain spoken structure even if awkward
+
+englishLight - Message-ready English:
+• Natural, fluent English prose
+• Proper grammar and sentence structure
+• Remove all spoken artifacts (fillers, false starts, repetitions)
+• Goal: reads like it was originally composed in written English
+• Ready to send as a professional message
+
+REMEMBER: "Light" = transform spoken language into clean written language that's ready to send.
+
 Only return valid JSON, nothing else.
 """
 
