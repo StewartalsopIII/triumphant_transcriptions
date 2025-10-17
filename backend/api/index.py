@@ -1,5 +1,5 @@
 import logging
-from typing import Dict
+from typing import Any, Dict
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -64,7 +64,7 @@ class TransformRequest(BaseModel):
 
 
 @app.post("/api/transcribe")
-async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, str]:
+async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, Any]:
     """Accept audio uploads and return Gemini transcription variants."""
     try:
         logger.info("transcribe_started: filename=%s", audio.filename)
@@ -75,7 +75,7 @@ async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, 
 
         result = await transcribe_audio(contents, audio.filename, audio.content_type)
 
-        logger.info("transcribe_finished")
+        logger.info("transcribe_finished: session_id=%s", result.get("sessionId"))
         return result
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.error("transcribe_failed: %s", exc, exc_info=True)

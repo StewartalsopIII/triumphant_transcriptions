@@ -22,6 +22,12 @@ export default function ResultsScreen({ navigation }) {
   const { transcriptions } = useTranscription();
   const [feedback, setFeedback] = useState('');
 
+  const sessionId = transcriptions?.sessionId || '';
+  const archive = transcriptions?.archive || null;
+  const artifactCount = archive && typeof archive.artifacts === 'object' && archive.artifacts !== null
+    ? Object.keys(archive.artifacts).length
+    : 0;
+
   useEffect(() => {
     if (!transcriptions) {
       navigation.replace('Recording');
@@ -45,6 +51,33 @@ export default function ResultsScreen({ navigation }) {
       <ScrollView contentContainerStyle={styles.inner}>
         <Text style={styles.title}>Transcription Results</Text>
         {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
+
+        {(sessionId || archive) ? (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <Text style={styles.cardTitle}>Session Details</Text>
+              {sessionId ? (
+                <TouchableOpacity style={styles.copyButton} onPress={() => copyToClipboard(sessionId)}>
+                  <Text style={styles.copyButtonText}>Copy ID</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            {sessionId ? (
+              <Text style={styles.cardBody}>ID: {sessionId}</Text>
+            ) : null}
+            {archive ? (
+              <Text style={styles.cardBody}>
+                Archive: {archive.backend || 'none'}{archive.enabled === false ? ' (disabled)' : ''}
+              </Text>
+            ) : null}
+            {artifactCount ? (
+              <Text style={styles.cardBody}>Artifacts saved: {artifactCount}</Text>
+            ) : null}
+            {archive?.error ? (
+              <Text style={styles.errorTextSmall}>Archive error: {archive.error}</Text>
+            ) : null}
+          </View>
+        ) : null}
 
         {ENTRIES.map(({ key, label }) => {
           const transcriptValue = transcriptions?.[key] ?? '';
@@ -127,6 +160,11 @@ const styles = StyleSheet.create({
   cardBody: {
     color: '#cbd5f5',
     lineHeight: 20,
+  },
+  errorTextSmall: {
+    color: '#f87171',
+    marginTop: 8,
+    fontSize: 12,
   },
   copyButton: {
     paddingHorizontal: 12,
