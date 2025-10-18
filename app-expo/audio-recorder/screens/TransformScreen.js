@@ -177,7 +177,13 @@ export default function TransformScreen({ route, navigation }) {
 
         {resultValue ? (
           <View style={styles.resultBox}>
-            <Text style={styles.resultText}>{resultValue}</Text>
+            <TextInput
+              style={[styles.resultText, styles.resultInput]}
+              value={resultValue}
+              multiline
+              editable={false}
+              scrollEnabled={false}
+            />
             <TouchableOpacity
               style={[styles.button, styles.secondaryButton]}
               onPress={() => copyToClipboard(resultValue)}
@@ -315,6 +321,9 @@ const styles = StyleSheet.create({
   resultText: {
     color: '#e2e8f0',
     lineHeight: 20,
+  },
+  resultInput: {
+    padding: 0,
   },
   errorText: {
     color: '#f87171',
