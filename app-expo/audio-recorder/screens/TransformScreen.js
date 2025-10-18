@@ -34,7 +34,7 @@ const SECTION_META = {
   },
 };
 
-export default function TransformScreen({ route }) {
+export default function TransformScreen({ route, navigation }) {
   const sourceText = route.params?.text ?? '';
   const { transformCache, setTransformCache } = useTranscription();
 
@@ -197,6 +197,12 @@ export default function TransformScreen({ route }) {
         {feedback ? <Text style={styles.feedback}>{feedback}</Text> : null}
         {renderPreview()}
         {['tweet', 'professional', 'custom'].map(renderSection)}
+        <TouchableOpacity
+          style={[styles.button, styles.primaryButton]}
+          onPress={() => navigation.replace('Recording')}
+        >
+          <Text style={styles.buttonText}>Record Again</Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
