@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import { Audio } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 
 import { useTranscription } from '../TranscriptionContext';
 
@@ -22,6 +23,7 @@ const formatTime = (seconds) => {
 };
 
 export default function RecordingScreen({ navigation }) {
+  const KEEP_AWAKE_TAG = 'recording-session';
   const [isRecording, setIsRecording] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [error, setError] = useState('');
@@ -41,6 +43,8 @@ export default function RecordingScreen({ navigation }) {
           clearInterval(timerRef.current);
           timerRef.current = null;
         }
+
+        deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
       };
     }, [setTranscriptions, resetTransforms])
   );
@@ -65,6 +69,9 @@ export default function RecordingScreen({ navigation }) {
       );
 
       recordingRef.current = recording;
+
+      await activateKeepAwakeAsync(KEEP_AWAKE_TAG);
+
       setIsRecording(true);
       setElapsedTime(0);
 
@@ -74,6 +81,17 @@ export default function RecordingScreen({ navigation }) {
     } catch (err) {
       console.error('startRecording error', err);
       setError(err?.message || 'Failed to start recording.');
+
+      if (recordingRef.current) {
+        try {
+          await recordingRef.current.stopAndUnloadAsync();
+        } catch (stopErr) {
+          console.error('cleanupRecording error', stopErr);
+        }
+        recordingRef.current = null;
+      }
+
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     }
   };
 
@@ -105,6 +123,7 @@ export default function RecordingScreen({ navigation }) {
     } finally {
       setIsRecording(false);
       recordingRef.current = null;
+      deactivateKeepAwake(KEEP_AWAKE_TAG).catch(() => {});
     }
   };
 

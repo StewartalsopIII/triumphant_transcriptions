@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import google.generativeai as genai
 
@@ -35,6 +35,24 @@ englishStrict - Verbatim English:
 
 Only return valid JSON, nothing else.
 """
+
+CONTINUE_PROMPT_TEMPLATE = """
+The previous response stopped mid-thought. You must continue the transcript until the audio ends.
+
+Partial transcript that you already returned:
+{partial_json}
+
+Return ONLY the missing continuation in this exact JSON shape (no other text):
+{
+  "originalStrict": "continuation text only, do not repeat prior content",
+  "englishStrict": "continuation text only, do not repeat prior content"
+}
+
+Do not restate any sentences that appear in the partial transcript. Continue seamlessly from where it stops and include the complete remainder of the audio.
+"""
+
+MAX_CONTINUATION_ATTEMPTS = 1
+MIN_TRUNCATION_LENGTH = 200
 
 
 async def apply_light_edit(text: str, max_move_ratio: float = 0.3) -> str:
@@ -99,33 +117,89 @@ async def transcribe_audio(
         )
 
         # Step 1: Get strict variants from Gemini
-        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
-        response = model.generate_content(
-            [
-                {
-                    "inline_data": {
-                        "mime_type": mime_type,
-                        "data": audio_content,
-                    }
-                },
-                {"text": PROMPT},
-            ]
+        strict_variants, raw_response_text = await _request_strict_variants(
+            audio_content,
+            mime_type,
+            PROMPT,
+        )
+        logger.info("strict_transcription_successful: session_id=%s", session_id)
+
+        continuation_raw_responses: List[str] = []
+        retry_count = 0
+        needs_continuation = any(
+            _is_truncated(strict_variants.get(field, ""))
+            for field in ("originalStrict", "englishStrict")
         )
 
-        raw_response_text = (response.text or "")
-        result_text = raw_response_text.strip()
+        truncation_detected = needs_continuation
 
-        # Strip code blocks if present
-        if result_text.startswith("```"):
-            segments = result_text.split("```")
-            if len(segments) >= 2:
-                result_text = segments[1]
-                if result_text.startswith("json"):
-                    result_text = result_text[4:]
-            result_text = result_text.strip()
+        while needs_continuation and retry_count < MAX_CONTINUATION_ATTEMPTS:
+            retry_count += 1
+            logger.warning(
+                "strict_transcription_truncated_detected: session_id=%s attempt=%s",
+                session_id,
+                retry_count,
+            )
 
-        strict_variants = json.loads(result_text)
-        logger.info("strict_transcription_successful: session_id=%s", session_id)
+            partial_json = json.dumps(
+                {
+                    "originalStrict": strict_variants.get("originalStrict", ""),
+                    "englishStrict": strict_variants.get("englishStrict", ""),
+                },
+                ensure_ascii=True,
+                indent=2,
+            )
+            continue_prompt = CONTINUE_PROMPT_TEMPLATE.format(partial_json=partial_json)
+            try:
+                continuation_variants_raw, continuation_raw = await _request_strict_variants(
+                    audio_content,
+                    mime_type,
+                    continue_prompt,
+                )
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.warning(
+                    "strict_transcription_continuation_parse_failed: session_id=%s attempt=%s error=%s",
+                    session_id,
+                    retry_count,
+                    exc,
+                )
+                break
+
+            continuation_raw_responses.append(continuation_raw.strip())
+
+            if not isinstance(continuation_variants_raw, dict):
+                logger.warning(
+                    "strict_transcription_continuation_non_dict: session_id=%s attempt=%s type=%s",
+                    session_id,
+                    retry_count,
+                    type(continuation_variants_raw).__name__,
+                )
+                break
+
+            continuation_variants = continuation_variants_raw
+
+            for field in ("originalStrict", "englishStrict"):
+                addition_raw = continuation_variants.get(field)
+                addition = (addition_raw or "").strip()
+                if not addition:
+                    continue
+                base = strict_variants.get(field, "")
+                separator = "" if not base or base.endswith((" ", "\n")) else " "
+                strict_variants[field] = f"{base}{separator}{addition}"
+
+            needs_continuation = any(
+                _is_truncated(strict_variants.get(field, ""))
+                for field in ("originalStrict", "englishStrict")
+            )
+
+        if needs_continuation:
+            logger.warning("strict_transcription_still_truncated: session_id=%s", session_id)
+        else:
+            logger.info(
+                "strict_transcription_continuation_complete: session_id=%s attempts=%s",
+                session_id,
+                retry_count,
+            )
 
         # Step 2: Apply light editing to create light variants
         logger.info("applying_light_edits: session_id=%s", session_id)
@@ -151,13 +225,20 @@ async def transcribe_audio(
             "filename": safe_name,
             "contentType": mime_type,
             "sizeBytes": file_size,
+            "continuationAttempts": retry_count,
+            "truncationDetected": truncation_detected,
+            "truncatedAfterRetries": needs_continuation,
         }
 
         archive_manager = get_archive_manager()
+        raw_payload = raw_response_text.strip()
+        if continuation_raw_responses:
+            continuation_text = "\n\n--- CONTINUATION ---\n\n".join(continuation_raw_responses)
+            raw_payload = f"{raw_payload}\n\n--- CONTINUATION ---\n\n{continuation_text}".strip()
         archive_info = await archive_manager.persist_session(
             session_id=session_id,
             prompt=PROMPT.strip(),
-            raw_response_text=raw_response_text.strip(),
+            raw_response_text=raw_payload,
             strict_variants=strict_variants,
             light_variants=light_variants,
             audio=audio_payload,
@@ -189,3 +270,56 @@ async def transcribe_audio(
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.error("transcription_failed: %s", exc, exc_info=True)
         raise
+def _strip_code_fence(text: str) -> str:
+    """Remove leading Markdown code fences the model sometimes returns."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        segments = cleaned.split("```")
+        if len(segments) >= 2:
+            cleaned = segments[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            elif cleaned.startswith("text"):
+                cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+    return cleaned
+
+
+def _is_truncated(text: str) -> bool:
+    """Heuristic to flag transcripts that probably stopped early."""
+    stripped = text.strip()
+    if not stripped:
+        return False
+
+    if len(stripped) < MIN_TRUNCATION_LENGTH:
+        return False
+
+    terminal_chars = {'.', '!', '?', '"', "'", ')', '…', '”', '’'}
+    if stripped[-1] in terminal_chars:
+        return False
+
+    return True
+
+
+async def _request_strict_variants(
+    audio_content: bytes,
+    mime_type: str,
+    prompt: str,
+) -> Tuple[Dict[str, Any], str]:
+    model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+    response = model.generate_content(
+        [
+            {
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": audio_content,
+                }
+            },
+            {"text": prompt},
+        ]
+    )
+
+    raw_response_text = response.text or ""
+    parsed_text = _strip_code_fence(raw_response_text)
+    strict_variants = json.loads(parsed_text)
+    return strict_variants, raw_response_text
