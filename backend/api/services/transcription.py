@@ -33,6 +33,11 @@ englishStrict - Verbatim English:
 • Direct word-for-word translation including all fillers
 • Maintain spoken structure even if awkward
 
+Formatting guidelines for both variants:
+• Insert a single newline when the speaker clearly pauses or shifts to a new thought
+• Do not insert double newlines or formal paragraph breaks
+• If unsure, err on the side of fewer line breaks to preserve the spoken flow
+
 Only return valid JSON, nothing else.
 """
 
@@ -70,6 +75,9 @@ async def apply_light_edit(text: str, max_move_ratio: float = 0.3) -> str:
         "You must NOT rephrase the wording of any sentence beyond those fixes.\n"
         "Also remove filler words (um, uh, like, you know, basically, actually), "
         "fix grammar to create complete sentences, and remove repetitions.\n"
+        "Structure the text into coherent paragraphs separated by double line breaks, grouping "
+        "sentences by topic so it reads like polished prose.\n"
+        "Do not introduce headings, bullet lists, or other formats unless they are already present.\n"
         "PRESERVE the exact vocabulary - do not paraphrase or use synonyms.\n"
         "Return ONLY the updated passage as plain text. Do not add explanations or formatting.\n\n"
         "Text:\n" + text
