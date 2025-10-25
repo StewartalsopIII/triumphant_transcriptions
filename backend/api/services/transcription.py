@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, NoReturn
 
 import google.generativeai as genai
 
@@ -129,6 +129,7 @@ async def transcribe_audio(
             audio_content,
             mime_type,
             PROMPT,
+            session_id=session_id,
         )
         logger.info("strict_transcription_successful: session_id=%s", session_id)
 
@@ -163,6 +164,7 @@ async def transcribe_audio(
                     audio_content,
                     mime_type,
                     continue_prompt,
+                    session_id=session_id,
                 )
             except (json.JSONDecodeError, ValueError) as exc:
                 logger.warning(
@@ -313,6 +315,8 @@ async def _request_strict_variants(
     audio_content: bytes,
     mime_type: str,
     prompt: str,
+    *,
+    session_id: Optional[str] = None,
 ) -> Tuple[Dict[str, Any], str]:
     model = genai.GenerativeModel(GEMINI_MODEL_NAME)
     response = model.generate_content(
@@ -329,5 +333,37 @@ async def _request_strict_variants(
 
     raw_response_text = response.text or ""
     parsed_text = _strip_code_fence(raw_response_text)
-    strict_variants = json.loads(parsed_text)
+    try:
+        strict_variants = json.loads(parsed_text)
+    except json.JSONDecodeError as exc:
+        # Gemini occasionally returns invalid JSON containing literal control
+        # characters (e.g. raw newlines). Retry with loose parsing first.
+        if "Invalid control character" in str(exc):
+            try:
+                strict_variants = json.loads(parsed_text, strict=False)
+                logger.warning(
+                    "strict_transcription_parse_recovered: session_id=%s mode=loose",
+                    session_id,
+                )
+            except json.JSONDecodeError:
+                strict_variants = _log_and_raise_parse_error(parsed_text, session_id, exc)
+        else:
+            strict_variants = _log_and_raise_parse_error(parsed_text, session_id, exc)
     return strict_variants, raw_response_text
+
+
+def _log_and_raise_parse_error(
+    parsed_text: str, session_id: Optional[str], exc: Exception
+) -> NoReturn:
+    snippet = parsed_text[:800]
+    safe_snippet = (
+        snippet.encode("unicode_escape", "backslashreplace")
+        .decode("ascii", "replace")
+    )
+    logger.error(
+        "strict_transcription_parse_failed: session_id=%s error=%s snippet=%s",
+        session_id,
+        exc,
+        safe_snippet,
+    )
+    raise exc
