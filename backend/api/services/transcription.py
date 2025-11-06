@@ -24,19 +24,20 @@ Transcribe this audio and return JSON in this EXACT format (no other text):
 
 VARIANT SPECIFICATIONS:
 
-originalStrict - Verbatim capture:
-• Include every word, pause, filler (um, uh, like, you know, basically, actually)
+originalStrict - Clean verbatim:
+• Remove filler words (um, uh, like, you know, basically, actually)
 • Keep false starts, repetitions, incomplete thoughts
 • Original language only
 
-englishStrict - Verbatim English:
-• Direct word-for-word translation including all fillers
+englishStrict - Clean verbatim English:
+• Direct word-for-word translation with filler words removed
 • Maintain spoken structure even if awkward
 
 Formatting guidelines for both variants:
-• Insert a single newline when the speaker clearly pauses or shifts to a new thought
-• Do not insert double newlines or formal paragraph breaks
-• If unsure, err on the side of fewer line breaks to preserve the spoken flow
+• Keep text as continuous flowing prose
+• Only insert line breaks between major topic shifts or long pauses (5+ seconds)
+• Prefer keeping sentences together in paragraph form
+• Err on the side of fewer line breaks to preserve natural flow
 
 Only return valid JSON, nothing else.
 """
