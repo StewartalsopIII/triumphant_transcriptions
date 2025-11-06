@@ -103,6 +103,39 @@ async def apply_light_edit(text: str, max_move_ratio: float = 0.3) -> str:
         return text
 
 
+async def translate_to_language(text: str, target_language: str) -> str:
+    """
+    Translate text to the specified target language.
+    Preserves meaning and formatting from the source text.
+    """
+    prompt = (
+        f"Translate the following text to {target_language}.\n"
+        "Preserve the meaning, tone, and paragraph structure.\n"
+        "Return ONLY the translated text, nothing else.\n\n"
+        "Text:\n" + text
+    )
+
+    try:
+        model = genai.GenerativeModel(GEMINI_MODEL_NAME)
+        response = model.generate_content(prompt)
+        result_text = (response.text or "").strip()
+
+        # Strip markdown code fences if present
+        if result_text.startswith("```"):
+            segments = result_text.split("```")
+            if len(segments) >= 2:
+                result_text = segments[1]
+                if result_text.startswith("json") or result_text.startswith("text"):
+                    result_text = result_text[4:]
+            result_text = result_text.strip()
+
+        return result_text
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error("translation_failed: language=%s error=%s", target_language, exc, exc_info=True)
+        # Return original text if translation fails
+        return text
+
+
 async def transcribe_audio(
     audio_content: bytes,
     filename: Optional[str],
@@ -216,9 +249,18 @@ async def transcribe_audio(
         original_light = await apply_light_edit(strict_variants["originalStrict"])
         english_light = await apply_light_edit(strict_variants["englishStrict"])
 
+        # Step 3: Apply translations to additional languages
+        logger.info("applying_translations: session_id=%s", session_id)
+        french_light = await translate_to_language(english_light, "French")
+        portuguese_light = await translate_to_language(english_light, "Portuguese")
+        russian_light = await translate_to_language(english_light, "Russian")
+
         light_variants = {
             "originalLight": original_light,
             "englishLight": english_light,
+            "frenchLight": french_light,
+            "portugueseLight": portuguese_light,
+            "russianLight": russian_light,
         }
 
         audio_payload = AudioPayload(
@@ -261,7 +303,7 @@ async def transcribe_audio(
             archive_info.get("enabled"),
         )
 
-        # Step 3: Return all 4 variants
+        # Step 4: Return all variants (original, English, and translations)
         result = {
             "sessionId": session_id,
             "archive": archive_info,
@@ -269,6 +311,9 @@ async def transcribe_audio(
             "originalLight": original_light,
             "englishStrict": strict_variants["englishStrict"],
             "englishLight": english_light,
+            "frenchLight": french_light,
+            "portugueseLight": portuguese_light,
+            "russianLight": russian_light,
         }
 
         logger.info("transcription_successful: session_id=%s", session_id)
