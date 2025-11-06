@@ -16,6 +16,9 @@ const ENTRIES = [
   { key: 'originalLight', label: 'Original (Light)' },
   { key: 'englishStrict', label: 'English (Strict)' },
   { key: 'englishLight', label: 'English (Light)' },
+  { key: 'frenchLight', label: 'French' },
+  { key: 'portugueseLight', label: 'Portuguese' },
+  { key: 'russianLight', label: 'Russian' },
 ];
 
 export default function ResultsScreen({ navigation }) {
