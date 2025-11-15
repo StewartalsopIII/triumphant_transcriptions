@@ -1,4 +1,4 @@
-# Custom Prompt Flows
+git # Custom Prompt Flows
 
 This document visualizes the current custom prompt pipeline and two candidate constraint strategies. Each diagram is written in Mermaid so we can tweak or extend it easily.
 
