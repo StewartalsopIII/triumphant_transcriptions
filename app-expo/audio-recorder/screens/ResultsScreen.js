@@ -21,6 +21,15 @@ const ENTRIES = [
   { key: 'russianLight', label: 'Russian' },
 ];
 
+const normalizeParagraphs = (text) => {
+  if (!text) return [];
+  return text
+    .replace(/\r\n/g, '\n')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+};
+
 export default function ResultsScreen({ navigation }) {
   const { transcriptions } = useTranscription();
   const [feedback, setFeedback] = useState('');
@@ -84,6 +93,7 @@ export default function ResultsScreen({ navigation }) {
 
         {ENTRIES.map(({ key, label }) => {
           const transcriptValue = transcriptions?.[key] ?? '';
+          const paragraphs = normalizeParagraphs(transcriptValue);
           return (
             <View key={key} style={styles.card}>
               <View style={styles.cardHeader}>
@@ -96,7 +106,27 @@ export default function ResultsScreen({ navigation }) {
                   <Text style={styles.copyButtonText}>Copy</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={styles.cardBody}>{transcriptValue || '-'}</Text>
+              {transcriptValue ? (
+                <View style={styles.paragraphContainer}>
+                  {paragraphs.length > 0 ? (
+                    paragraphs.map((paragraph, index) => (
+                      <Text
+                        key={`${key}-paragraph-${index}`}
+                        style={[
+                          styles.cardBody,
+                          index > 0 ? styles.paragraphSpacing : null,
+                        ]}
+                      >
+                        {paragraph}
+                      </Text>
+                    ))
+                  ) : (
+                    <Text style={styles.cardBody}>{transcriptValue}</Text>
+                  )}
+                </View>
+              ) : (
+                <Text style={styles.cardBody}>-</Text>
+              )}
               <TouchableOpacity
                 style={[
                   styles.button,
@@ -163,6 +193,12 @@ const styles = StyleSheet.create({
   cardBody: {
     color: '#cbd5f5',
     lineHeight: 20,
+  },
+  paragraphContainer: {
+    marginBottom: 8,
+  },
+  paragraphSpacing: {
+    marginTop: 12,
   },
   errorTextSmall: {
     color: '#f87171',

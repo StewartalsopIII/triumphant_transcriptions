@@ -34,10 +34,10 @@ englishStrict - Clean verbatim English:
 • Maintain spoken structure even if awkward
 
 Formatting guidelines for both variants:
-• Keep text as continuous flowing prose
-• Only insert line breaks between major topic shifts or long pauses (5+ seconds)
-• Prefer keeping sentences together in paragraph form
-• Err on the side of fewer line breaks to preserve natural flow
+• Group related sentences into short paragraphs (2-4 sentences each)
+• Separate paragraphs with exactly one blank line (double newline) and never add blank lines at the start or end
+• Keep the writing as continuous prose—no bullet points, numbering, or headings
+• Only create a new paragraph for a major topic change or a pause longer than ~5 seconds
 
 Only return valid JSON, nothing else.
 """
