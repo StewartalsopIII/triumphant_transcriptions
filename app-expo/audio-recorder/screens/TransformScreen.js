@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
   ActivityIndicator,
   SafeAreaView,
@@ -34,6 +34,12 @@ const SECTION_META = {
   },
 };
 
+const VIOLATION_MESSAGES = {
+  word_limit_exceeded: 'Output exceeds the 120-word guideline.',
+  multiple_paragraphs_detected: 'Response contains multiple paragraphs; keep it to one.',
+  list_formatting_detected: 'Response looks like a list; convert it back to paragraph form.',
+};
+
 export default function TransformScreen({ route, navigation }) {
   const sourceText = route.params?.text ?? '';
   const { transformCache, setTransformCache } = useTranscription();
@@ -46,6 +52,7 @@ export default function TransformScreen({ route, navigation }) {
     professional: cached.professional ?? null,
     custom: cached.custom?.text ?? null,
   });
+  const [customMeta, setCustomMeta] = useState(cached.custom?.meta ?? null);
   const [errors, setErrors] = useState({ tweet: '', professional: '', custom: '' });
   const [loading, setLoading] = useState({ tweet: false, professional: false, custom: false });
   const [customPrompt, setCustomPrompt] = useState(cached.custom?.prompt ?? '');
@@ -57,20 +64,21 @@ export default function TransformScreen({ route, navigation }) {
       professional: cached.professional ?? null,
       custom: cached.custom?.text ?? null,
     });
+    setCustomMeta(cached.custom?.meta ?? null);
     setCustomPrompt(cached.custom?.prompt ?? '');
     setErrors({ tweet: '', professional: '', custom: '' });
   }, [cached]);
 
-  const updateCache = (type, payload) => {
+  const updateCache = useCallback((type, payload, meta = null) => {
     setTransformCache((prev) => {
       const existing = prev[sourceText] || {};
       const nextValue =
         type === 'custom'
-          ? { ...existing, custom: { prompt: customPrompt.trim(), text: payload } }
+          ? { ...existing, custom: { prompt: customPrompt.trim(), text: payload, meta } }
           : { ...existing, [type]: payload };
       return { ...prev, [sourceText]: nextValue };
     });
-  };
+  }, [customPrompt, setTransformCache, sourceText]);
 
   const handleTransform = async (type) => {
     if (!sourceText) {
@@ -93,8 +101,19 @@ export default function TransformScreen({ route, navigation }) {
         type === 'custom' ? customPrompt.trim() : null
       );
       const text = response?.text ?? '';
+      const meta =
+        type === 'custom'
+          ? {
+              violations: response?.violations ?? [],
+              metadata: response?.metadata ?? {},
+            }
+          : null;
+
       setResults((prev) => ({ ...prev, [type]: text }));
-      updateCache(type, text);
+      if (type === 'custom') {
+        setCustomMeta(meta);
+      }
+      updateCache(type, text, meta);
     } catch (err) {
       console.error('transform error', err);
       setErrors((prev) => ({ ...prev, [type]: err?.message || 'Transform failed.' }));
@@ -162,6 +181,21 @@ export default function TransformScreen({ route, navigation }) {
         ) : null}
 
         {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+        {type === 'custom' && customMeta?.metadata?.wordCount !== undefined ? (
+          <Text style={styles.metaText}>
+            Word count: {customMeta.metadata.wordCount ?? 0} / 120 target
+          </Text>
+        ) : null}
+        {type === 'custom' && customMeta?.violations?.length ? (
+          <View style={styles.warningBox}>
+            <Text style={styles.warningTitle}>Try tightening the result</Text>
+            {customMeta.violations.map((code) => (
+              <Text key={code} style={styles.warningText}>
+                • {VIOLATION_MESSAGES[code] || code}
+              </Text>
+            ))}
+          </View>
+        ) : null}
 
         <TouchableOpacity
           style={[styles.button, isLoading ? styles.disabledButton : styles.primaryButton, type === 'custom' && !customPrompt.trim() ? styles.disabledButton : null]}
@@ -327,5 +361,26 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#f87171',
+  },
+  metaText: {
+    color: '#93c5fd',
+    fontSize: 13,
+    marginTop: 4,
+  },
+  warningBox: {
+    backgroundColor: '#4c1d95',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+  },
+  warningTitle: {
+    color: '#f5d0fe',
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  warningText: {
+    color: '#f5d0fe',
+    fontSize: 13,
+    marginTop: 2,
   },
 });
