@@ -1,5 +1,6 @@
 import logging
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
@@ -63,6 +64,46 @@ class TransformRequest(BaseModel):
     customPrompt: str | None = None
 
 
+SOFT_CONSTRAINT_PROMPT = """You are rewriting a transcript excerpt. Follow these rules strictly:
+- Obey the user's instruction exactly.
+- Output a single paragraph (no blank lines or bullet lists).
+- Keep the response under 120 words.
+- Do not add commentary, headings, or explanations.
+
+Return only the rewritten text."""
+
+
+def build_custom_prompt(user_instruction: str, transcript: str) -> str:
+    sanitized_instruction = user_instruction.strip()
+    return (
+        f"{SOFT_CONSTRAINT_PROMPT}\n\n"
+        f"User instruction:\n{sanitized_instruction}\n\n"
+        f"Transcript:\n{transcript.strip()}\n"
+    )
+
+
+def analyze_custom_output(text: str) -> Dict[str, Any]:
+    cleaned = text.strip()
+    word_count = len(re.findall(r"\b\w+\b", cleaned))
+    has_paragraph_breaks = "\n\n" in cleaned or cleaned.count("\n") > 0
+    has_list_markers = bool(
+        re.search(r"^\s*(?:[-*•]|\d+\.)\s+", cleaned, flags=re.MULTILINE)
+    )
+
+    violations: List[str] = []
+    if word_count > 120:
+        violations.append("word_limit_exceeded")
+    if has_paragraph_breaks:
+        violations.append("multiple_paragraphs_detected")
+    if has_list_markers:
+        violations.append("list_formatting_detected")
+
+    return {
+        "wordCount": word_count,
+        "violations": violations,
+    }
+
+
 @app.post("/api/transcribe")
 async def transcribe_audio_endpoint(audio: UploadFile = File(...)) -> Dict[str, Any]:
     """Accept audio uploads and return Gemini transcription variants."""
@@ -110,9 +151,7 @@ Only return the professional version, nothing else."""
         elif request.type == "custom":
             if not request.customPrompt:
                 raise HTTPException(status_code=400, detail="customPrompt required for custom type")
-            prompt = f"""{request.customPrompt}:
-
-{request.text}"""
+            prompt = build_custom_prompt(request.customPrompt, request.text)
         else:
             raise HTTPException(status_code=400, detail="Invalid type. Use: tweet, professional, or custom")
 
@@ -120,8 +159,18 @@ Only return the professional version, nothing else."""
         response = model.generate_content(prompt)
         result_text = (response.text or "").strip()
 
+        response_payload: Dict[str, Any] = {"text": result_text}
+        if request.type == "custom":
+            diagnostics = analyze_custom_output(result_text)
+            response_payload.update(
+                {
+                    "violations": diagnostics["violations"],
+                    "metadata": {"wordCount": diagnostics["wordCount"]},
+                }
+            )
+
         logger.info("transform_finished")
-        return {"text": result_text}
+        return response_payload
     except HTTPException:
         raise
     except Exception as exc:
